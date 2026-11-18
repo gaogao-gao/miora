@@ -1,3 +1,4 @@
+import copy
 import gc
 import os
 import json
@@ -622,6 +623,19 @@ def _register_oauth_providers_from_registry(oauth_manager) -> None:
         oauth_manager.register_provider(channel_id, oauth_provider)
 
 
+# 上游 httpx 客户端的默认配置。
+# 不要在这里写 "http2"：ClientManager 只在配置里没有 http2 时，才按 HTTP2_ENABLED 环境变量或上游主机白名单决定是否启用 HTTP/2。
+DEFAULT_UPSTREAM_CLIENT_CONFIG = {
+    "headers": {
+        "User-Agent": "Miora",
+        "Accept": "*/*",
+        "Accept-Encoding": "identity",
+    },
+    "verify": True,
+    "follow_redirects": False,
+}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # gen2 GC 调优：降低触发频率但不完全禁用
@@ -734,21 +748,9 @@ async def lifespan(app: FastAPI):
         logger.exception("Administrator initialization failed; protected APIs remain disabled")
 
     if app and not hasattr(app.state, 'client_manager'):
-
-        default_config = {
-            "headers": {
-                "User-Agent": "Miora",
-                "Accept": "*/*",
-                "Accept-Encoding": "identity",
-            },
-            "http2": False,
-            "verify": True,
-            "follow_redirects": False
-        }
-
         # 初始化客户端管理器（增加连接池以支持长时间请求）
         app.state.client_manager = ClientManager(pool_size=300, max_keepalive_connections=100)
-        await app.state.client_manager.init(default_config)
+        await app.state.client_manager.init(copy.deepcopy(DEFAULT_UPSTREAM_CLIENT_CONFIG))
 
     if app and not hasattr(app.state, 'oauth_manager'):
         # 修改原因：handler 解析 OAuth key_id 时需要访问共享的凭据管理器。

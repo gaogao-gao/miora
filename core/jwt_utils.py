@@ -78,7 +78,10 @@ def issue_jwt(payload: Dict[str, Any], *, expires_in_seconds: int = 7 * 24 * 360
 
     now = int(time.time())
     full_payload = dict(payload)
-    full_payload.setdefault("iat", now)
+    # iat 精度是秒，吊销判断用的是 iat <= _REVOKED_BEFORE_UNIX。
+    # 吊销后同一秒内签发的新令牌（改密码返回的令牌、退出后立刻重新登录）会被误判为已吊销，
+    # 所以默认 iat 至少取吊销时间点之后的那一秒。
+    full_payload.setdefault("iat", max(now, _REVOKED_BEFORE_UNIX + 1) if _REVOKED_BEFORE_UNIX > 0 else now)
     full_payload.setdefault("exp", now + int(expires_in_seconds))
     if str(full_payload.get("role", "")).lower() == "admin" and _CACHED_PASSWORD_FINGERPRINT:
         full_payload.setdefault("pwd_fp", _CACHED_PASSWORD_FINGERPRINT)
